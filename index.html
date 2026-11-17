@@ -68,7 +68,8 @@
   .btn.grande { min-height: 54px; font-size: 15px; width: 100%; }
   .btn.mini { min-height: 34px; padding: 5px 10px; font-size: 12px; }
   .btns { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; }
-  .btns.linha { grid-template-columns: repeat(3, 1fr); }
+  .btns.linha { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .btns.linha .btn { padding: 8px 4px; font-size: 12px; }
 
   #codigo { font-size: 18px; min-height: 56px; border: 2px solid var(--accent); font-weight: 600; }
   #sugestoes { display: flex; flex-direction: column; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
@@ -76,7 +77,10 @@
   #sugestoes button { text-align: left; background: #fff; border: 0; border-bottom: 1px solid var(--line); padding: 11px 12px; min-height: 48px; }
   #sugestoes button:last-child { border-bottom: 0; }
   #sugestoes small { display: block; color: var(--muted); }
-  #reader { width: 100%; max-width: 520px; margin: 10px auto 0; border-radius: 8px; overflow: hidden; }
+  #reader, #nativeCam { width: 100%; max-width: 520px; margin: 10px auto 0; border-radius: 8px; overflow: hidden; position: relative; background: #000; }
+  #camVideo { width: 100%; display: block; max-height: 360px; object-fit: cover; }
+  .cam-mira { position: absolute; left: 6%; right: 6%; top: 50%; height: 110px; transform: translateY(-50%); border: 2px solid rgba(233,84,32,.9); border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0,0,0,.35); pointer-events: none; }
+  .cam-mira::after { content: ''; position: absolute; left: 8%; right: 8%; top: 50%; height: 2px; background: rgba(233,84,32,.85); }
   #camMsg { display: block; color: var(--muted); margin-top: 6px; font-size: 12px; text-align: center; }
 
   .ultimo { border-left: 5px solid var(--ok); }
@@ -188,9 +192,11 @@
         <button class="btn grande" id="btnNC" type="button">➕ Item não catalogado</button>
       </div>
       <div id="camBox" hidden>
+        <div id="nativeCam" hidden><video id="camVideo" autoplay playsinline muted></video><div class="cam-mira"></div></div>
         <div id="reader"></div>
         <div class="btns linha">
-          <button class="btn" id="btnTorch" type="button">🔦 Lanterna</button>
+          <button class="btn" id="btnTorch" type="button">🔦 Luz</button>
+          <button class="btn" id="btnZoom" type="button">🔍 1x</button>
           <button class="btn" id="btnTroca" type="button">🔄 Trocar</button>
           <button class="btn perigo" id="btnFechaCam" type="button">✖ Fechar</button>
         </div>
@@ -345,7 +351,7 @@
   const NUM = v => v == null ? '-' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
   const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
   // Cole abaixo a URL /exec do seu Web App do Google Apps Script:
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycbyHxrYKsg02VoRoswEzgkV7C2g_87DOmdxcsvWORBktDAn_5UcPfweoKxD4ef4ks1Q/exec';
+  const GAS_URL = 'COLE_AQUI_A_URL_DO_SEU_WEB_APP_EXEC';
 
   const srv = async (fn, ...a) => {
     const usaGasNat = typeof google !== 'undefined' && google.script && google.script.run;
@@ -373,7 +379,8 @@
   const msgErro = e => (e && e.message) ? e.message.replace(/^Error:\s*/, '') : String(e);
 
   const S = { tab: 'bipar', temPin: false, pin: '', empresas: [], catalogo: [], catPronto: false, bips: [], rec: [], modo: 'auto', ocupado: false,
-              rel: null, filtro: 'todos', ultimoSync: null, qr: null, cams: [], camIdx: 0, torch: false, ultimoCodigo: '', ultimoCodigoEm: 0,
+              rel: null, filtro: 'todos', ultimoSync: null, qr: null, camAtiva: false, stream: null, track: null, detector: null, scanTimer: null,
+              cams: [], camIdx: 0, torch: false, zoom: 1, ultimoCodigo: '', ultimoCodigoEm: 0, candCod: '', candCont: 0, candEm: 0,
               cancelaSync: false, cfg: null, idxSku: null, idxEan: null, dupTxt: '', dupT: 0, limite: 400, enviando: false };
   let toastT;
   const dorme = ms => new Promise(r => setTimeout(r, ms));
@@ -455,7 +462,7 @@
 
   // ============================ BIPAGEM ============================
   function refoco() {
-    if (S.tab !== 'bipar' || S.qr) return;
+    if (S.tab !== 'bipar' || S.camAtiva) return;
     const finePointer = window.matchMedia && window.matchMedia('(pointer:fine)').matches;
     if (finePointer || $('leitor').checked) $('codigo').focus();
   }
@@ -612,7 +619,47 @@
     ls.set('inv_modo', m); if (m === 'auto') fechaManual();
   }
 
-  // ============================ CÂMERA (html5-qrcode) ============================
+  // ============================ CÂMERA (BarcodeDetector + Fallback) ============================
+  const FORMATOS_NAT = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
+
+  function eanValido(cod) {
+    const s = String(cod || '').trim();
+    if (!/^\d+$/.test(s)) return true; // Code 128 alfanumérico não usa dígito EAN
+    if (s.length !== 8 && s.length !== 12 && s.length !== 13) return true;
+    const dig = s.split('').map(Number), ult = dig.pop();
+    let soma = 0;
+    if (s.length === 13) dig.forEach((d, i) => { soma += d * (i % 2 === 0 ? 1 : 3); });
+    else dig.forEach((d, i) => { soma += d * (i % 2 === 0 ? 3 : 1); });
+    return ((10 - (soma % 10)) % 10) === ult;
+  }
+
+  async function suportaDetectorNativo() {
+    if (!('BarcodeDetector' in window)) return false;
+    try {
+      const f = await BarcodeDetector.getSupportedFormats();
+      return f.includes('ean_13');
+    } catch (e) { return false; }
+  }
+
+  function pegarTrackAtiva() {
+    if (S.track) return S.track;
+    const v = document.querySelector('#reader video');
+    return v && v.srcObject ? v.srcObject.getVideoTracks()[0] : null;
+  }
+
+  async function aplicarFocoEZoomPadrao(track) {
+    if (!track || !track.getCapabilities) return;
+    try {
+      const cap = track.getCapabilities(), adv = [];
+      if (cap.focusMode && cap.focusMode.includes('continuous')) adv.push({ focusMode: 'continuous' });
+      if (cap.zoom && S.zoom > 1) {
+        const z = Math.min(cap.zoom.max || 2, Math.max(cap.zoom.min || 1, S.zoom));
+        adv.push({ zoom: z });
+      }
+      if (adv.length) await track.applyConstraints({ advanced: adv });
+    } catch (e) {}
+  }
+
   async function abrirCamera() {
     if (!setup()) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -620,18 +667,19 @@
       toast('Este navegador/app não suporta câmera ao vivo. Abra o link diretamente no Chrome ou Safari.', true);
       return;
     }
-    if (typeof Html5Qrcode === 'undefined') {
-      $('fallbackFoto').hidden = false;
-      toast('Leitor de câmera indisponível. Use a foto ou digite o código.', true);
-      return;
-    }
-    if (S.qr) return;
+    if (S.camAtiva) return;
     $('camBox').hidden = false;
     $('camMsg').textContent = 'Solicitando permissão da câmera...';
+    S.camAtiva = true;
     try {
       await iniciaCamera(true);
-      if (!S.cams.length) {
-        try { S.cams = await Html5Qrcode.getCameras(); } catch (e) {}
+      if (!S.cams.length && navigator.mediaDevices.enumerateDevices) {
+        try {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          S.cams = devs.filter(d => d.kind === 'videoinput').map(d => ({ id: d.deviceId, label: d.label }));
+          const idxTras = S.cams.findIndex(c => /back|rear|traseira|environment/i.test(c.label));
+          if (idxTras !== -1) S.camIdx = idxTras;
+        } catch (e) {}
       }
     } catch (e) {
       await fecharCamera();
@@ -644,43 +692,129 @@
       }
     }
   }
+
   async function iniciaCamera(usarTraseiraPadrao) {
+    const nativo = await suportaDetectorNativo();
+    const videoCons = (!usarTraseiraPadrao && S.cams.length)
+      ? { deviceId: { exact: S.cams[S.camIdx].id }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } };
+
+    if (nativo) {
+      $('nativeCam').hidden = false;
+      $('reader').hidden = true;
+      S.stream = await navigator.mediaDevices.getUserMedia({ video: videoCons, audio: false });
+      const vid = $('camVideo');
+      vid.srcObject = S.stream;
+      await vid.play();
+      S.track = S.stream.getVideoTracks()[0] || null;
+      await aplicarFocoEZoomPadrao(S.track);
+      S.detector = new BarcodeDetector({ formats: FORMATOS_NAT });
+      $('camMsg').textContent = 'Leitura HD contínua ativa. Use 🔍 1.5x/2x se precisar ler de longe.';
+      const loop = async () => {
+        if (!S.camAtiva || !S.detector) return;
+        try {
+          if (vid.readyState >= 2) {
+            const res = await S.detector.detect(vid);
+            if (res && res.length && res[0].rawValue) onLeitura(res[0].rawValue);
+          }
+        } catch (e) {}
+        if (S.camAtiva) S.scanTimer = setTimeout(loop, 80);
+      };
+      loop();
+      return;
+    }
+
+    if (typeof Html5Qrcode === 'undefined') {
+      throw new Error('Leitor de câmera indisponível.');
+    }
+    $('nativeCam').hidden = true;
+    $('reader').hidden = false;
     const F = window.Html5QrcodeSupportedFormats;
     const cfg = { verbose: false, useBarCodeDetectorIfSupported: true };
-    if (F) cfg.formatsToSupport = [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE];
+    if (F) cfg.formatsToSupport = [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128];
     S.qr = new Html5Qrcode('reader', cfg);
-    const cameraConfig = (!usarTraseiraPadrao && S.cams.length)
-      ? S.cams[S.camIdx].id
-      : { facingMode: 'environment' };
+    const cameraConfig = (!usarTraseiraPadrao && S.cams.length) ? S.cams[S.camIdx].id : { facingMode: 'environment' };
     const scanCfg = {
       fps: 15,
+      videoConstraints: Object.assign({ focusMode: 'continuous' }, videoCons),
       qrbox: (w, h) => ({
-        width: Math.min(340, Math.floor(w * 0.88)),
-        height: Math.min(160, Math.floor(h * 0.45))
+        width: Math.min(340, Math.floor(w * 0.90)),
+        height: Math.min(120, Math.floor(h * 0.32))
       })
     };
     await S.qr.start(cameraConfig, scanCfg, onLeitura, () => {});
-    $('camMsg').textContent = 'Leitura contínua ativa. Aponte para o código de barras.';
+    S.track = pegarTrackAtiva();
+    await aplicarFocoEZoomPadrao(S.track);
+    $('camMsg').textContent = 'Leitura contínua ativa. Use 🔍 1.5x/2x para focar melhor.';
   }
+
   function onLeitura(texto) {
+    texto = String(texto || '').trim();
+    if (!texto || !eanValido(texto)) return; // descarta frame borrado com dígito verificador inválido
     const agora = Date.now();
     if (texto === S.ultimoCodigo && agora - S.ultimoCodigoEm < 2000) return;
+
+    // Se o código não existe no catálogo, exige 2 leituras idênticas seguidas para evitar erro por frame borrado
+    if (S.catPronto && S.catalogo.length && !acharLocal(texto)) {
+      if (texto === S.candCod && agora - S.candEm < 1500) S.candCont++;
+      else { S.candCod = texto; S.candCont = 1; }
+      S.candEm = agora;
+      if (S.candCont < 2) return;
+      S.candCont = 0;
+    } else {
+      S.candCod = ''; S.candCont = 0;
+    }
+
     S.ultimoCodigo = texto; S.ultimoCodigoEm = agora;
     processarEntrada(texto);
   }
+
   async function fecharCamera() {
-    const q = S.qr; S.qr = null; S.torch = false;
+    S.camAtiva = false; S.torch = false; S.zoom = 1; S.detector = null;
+    if (S.scanTimer) { clearTimeout(S.scanTimer); S.scanTimer = null; }
+    if (S.stream) { try { S.stream.getTracks().forEach(t => t.stop()); } catch (e) {} S.stream = null; }
+    S.track = null;
+    const vid = $('camVideo'); if (vid) vid.srcObject = null;
+    const q = S.qr; S.qr = null;
     if (q) { try { await q.stop(); q.clear(); } catch (e) {} }
+    $('nativeCam').hidden = true; $('reader').hidden = false;
     $('camBox').hidden = true; $('btnTorch').classList.remove('suave');
+    $('btnZoom').textContent = '🔍 1x'; $('btnZoom').classList.remove('suave');
   }
+
   async function alternaLanterna() {
-    if (!S.qr) return;
-    try { S.torch = !S.torch; await S.qr.applyVideoConstraints({ advanced: [{ torch: S.torch }] }); $('btnTorch').classList.toggle('suave', S.torch); }
-    catch (e) { S.torch = false; toast('Este aparelho/navegador não permite controlar a lanterna.', true); }
+    const tr = pegarTrackAtiva();
+    if (!S.camAtiva || (!tr && !S.qr)) return;
+    try {
+      S.torch = !S.torch;
+      if (tr) await tr.applyConstraints({ advanced: [{ torch: S.torch }] });
+      else await S.qr.applyVideoConstraints({ advanced: [{ torch: S.torch }] });
+      $('btnTorch').classList.toggle('suave', S.torch);
+    } catch (e) { S.torch = false; toast('Este aparelho/navegador não permite controlar a lanterna.', true); }
   }
+
+  async function alternaZoom() {
+    const tr = pegarTrackAtiva();
+    if (!S.camAtiva || !tr || !tr.getCapabilities) { toast('Zoom não disponível nesta câmera.', true); return; }
+    const cap = tr.getCapabilities();
+    if (!cap.zoom) { toast('Este aparelho não suporta zoom na câmera web.', true); return; }
+    const niveis = [1, 1.5, 2].filter(z => z === 1 || (z >= cap.zoom.min && z <= cap.zoom.max));
+    if (niveis.length < 2) { toast('Zoom não suportado neste sensor.', true); return; }
+    const prox = niveis[(niveis.indexOf(S.zoom) + 1) % niveis.length];
+    try {
+      await tr.applyConstraints({ advanced: [{ zoom: prox }] });
+      S.zoom = prox;
+      $('btnZoom').textContent = '🔍 ' + prox + 'x';
+      $('btnZoom').classList.toggle('suave', prox > 1);
+    } catch (e) { toast('Não foi possível aplicar zoom.', true); }
+  }
+
   async function trocaCamera() {
-    if (!S.qr || S.cams.length < 2) { toast('Só há uma câmera disponível.', true); return; }
-    try { await S.qr.stop(); S.qr.clear(); } catch (e) {}
+    if (!S.camAtiva || S.cams.length < 2) { toast('Só há uma câmera disponível.', true); return; }
+    if (S.scanTimer) { clearTimeout(S.scanTimer); S.scanTimer = null; }
+    if (S.stream) { try { S.stream.getTracks().forEach(t => t.stop()); } catch (e) {} S.stream = null; }
+    S.track = null; S.detector = null;
+    if (S.qr) { try { await S.qr.stop(); S.qr.clear(); } catch (e) {} S.qr = null; }
     S.camIdx = (S.camIdx + 1) % S.cams.length;
     try { await iniciaCamera(false); } catch (e) { fecharCamera(); toast('Falha ao trocar a câmera.', true); }
   }
@@ -1001,7 +1135,7 @@
   $('codigo').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); processarEntrada($('codigo').value); } });
   $('ultimo').addEventListener('click', consultaVivo); $('manualInfo').addEventListener('click', consultaVivo);
   $('sugestoes').addEventListener('click', e => { const b = e.target.closest('[data-sku]'); if (b) processarEntrada(b.dataset.sku); });
-  $('btnCam').onclick = abrirCamera; $('btnFechaCam').onclick = fecharCamera; $('btnTorch').onclick = alternaLanterna; $('btnTroca').onclick = trocaCamera;
+  $('btnCam').onclick = abrirCamera; $('btnFechaCam').onclick = fecharCamera; $('btnTorch').onclick = alternaLanterna; $('btnZoom').onclick = alternaZoom; $('btnTroca').onclick = trocaCamera;
   $('btnFoto').onclick = () => $('foto').click(); $('foto').onchange = e => lerFoto(e.target.files[0]);
   $('btnNC').onclick = abrirNC; $('btnDesfazer').onclick = desfazer;
   $('btnConfManual').onclick = confirmaManual; $('btnCancManual').onclick = fechaManual;
