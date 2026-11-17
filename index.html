@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Inventário</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  .est-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 10px; }
+  .est-box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--bg); }
+  .est-box b { display: block; margin-bottom: 8px; }
+  :root {
+    color-scheme: light;
+    --bg: #f4f4f2; --panel: #ffffff; --line: #dcdcd8; --text: #2c2c2c; --muted: #6b6b6b;
+    --accent: #E95420; --accent-bg: rgba(233,84,32,.10); --aubergine: #772953;
+    --ok: #0e8420; --ok-bg: rgba(14,132,32,.10); --warn: #a16207; --warn-bg: rgba(161,98,7,.10);
+    --bad: #c7162b; --bad-bg: rgba(199,22,43,.08);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:disabled { opacity: .55; cursor: wait; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input, select, textarea { font-size: 16px; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; width: 100%; min-height: 46px; }
+  input[type=checkbox] { width: 20px; height: 20px; min-height: 0; padding: 0; accent-color: var(--accent); }
+
+  .app { max-width: 1280px; margin: 0 auto; padding: 14px 14px 96px; }
+  .topo { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  h1 { font-size: 20px; font-weight: 700; }
+  h2 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+  h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .pill { font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 10px; }
+
+  .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .nav button { flex: 1; border: 0; background: transparent; padding: 9px 2px 8px; font-size: 11px; font-weight: 600; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative; min-height: 56px; }
+  .nav button .ic { font-size: 20px; line-height: 1; }
+  .nav button.on { color: var(--accent); }
+  .nav .bdg { position: absolute; top: 4px; right: calc(50% - 22px); background: var(--bad); color: #fff; border-radius: 9px; font-size: 10px; padding: 0 5px; min-width: 17px; }
+  @media (min-width: 900px) {
+    .app { padding-bottom: 40px; }
+    .nav { position: static; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 14px; padding: 4px; gap: 4px; }
+    .nav button { flex-direction: row; justify-content: center; gap: 8px; font-size: 13px; min-height: 42px; border-radius: 8px; }
+    .nav button.on { background: var(--accent-bg); }
+    .nav .bdg { position: static; }
+  }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .grade3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  label { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .opcoes { display: flex; gap: 12px 18px; flex-wrap: wrap; align-items: center; }
+  .sw { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); font-weight: 500; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 11px 14px; font-weight: 600; font-size: 13px; color: var(--muted); min-height: 46px; }
+  .seg button.on { background: var(--accent); color: #fff; }
+
+  .btn { background: var(--panel); border: 1px solid var(--line); padding: 10px 16px; border-radius: 8px; font-weight: 600; color: var(--muted); min-height: 46px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn.principal { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.principal:hover:not(:disabled) { background: #cf4519; color: #fff; }
+  .btn.suave { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+  .btn.perigo { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+  .btn.grande { min-height: 54px; font-size: 15px; width: 100%; }
+  .btn.mini { min-height: 34px; padding: 5px 10px; font-size: 12px; }
+  .btns { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; }
+  .btns.linha { grid-template-columns: repeat(3, 1fr); }
+
+  #codigo { font-size: 18px; min-height: 56px; border: 2px solid var(--accent); font-weight: 600; }
+  #sugestoes { display: flex; flex-direction: column; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  #sugestoes:empty { display: none; }
+  #sugestoes button { text-align: left; background: #fff; border: 0; border-bottom: 1px solid var(--line); padding: 11px 12px; min-height: 48px; }
+  #sugestoes button:last-child { border-bottom: 0; }
+  #sugestoes small { display: block; color: var(--muted); }
+  #reader { width: 100%; max-width: 520px; margin: 10px auto 0; border-radius: 8px; overflow: hidden; }
+  #camMsg { display: block; color: var(--muted); margin-top: 6px; font-size: 12px; text-align: center; }
+
+  .ultimo { border-left: 5px solid var(--ok); }
+  .ultimo.erro { border-left-color: var(--bad); background: var(--bad-bg); }
+  .ultimo .desc { font-weight: 700; font-size: 16px; }
+  .ultimo .mais { color: var(--ok); font-weight: 700; font-size: 22px; }
+  .ultimo.erro .desc { color: var(--bad); }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .saldos { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .saldos span { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; font-size: 12px; }
+  .saldos b { color: var(--accent); }
+
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .tag.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-bg); }
+  .tag.falta { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
+  .tag.sobra { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
+  .tag.rec { color: var(--aubergine); border-color: var(--aubergine); background: rgba(119,41,83,.08); }
+  .lanc { display: flex; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); align-items: center; }
+  .lanc:last-child { border-bottom: 0; }
+  .vazio { color: var(--muted); text-align: center; padding: 18px 8px; }
+
+  .view { display: none; } .view.on { display: block; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .kpi small { color: var(--muted); font-weight: 600; font-size: 11px; display: block; }
+  .kpi b { font-size: 22px; display: block; margin-top: 2px; }
+  .kpi.neg b { color: var(--bad); } .kpi.pos b { color: var(--ok); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chip { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--muted); min-height: 34px; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .barra { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  @media (max-width: 700px) { .barra { grid-template-columns: 1fr; } }
+  .rolagem { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 13px; }
+  th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 600; padding: 9px 10px; background: var(--bg); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td small { color: var(--muted); display: block; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  .neg { color: var(--bad); font-weight: 700; } .pos { color: var(--ok); font-weight: 700; }
+  .mono { font-family: ui-monospace, Consolas, monospace; }
+
+  .empresa-lin { display: grid; grid-template-columns: 1.2fr 1.6fr 1fr auto auto; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  @media (max-width: 800px) { .empresa-lin { grid-template-columns: 1fr 1fr; } }
+  .barra-prog { height: 14px; background: var(--line); border-radius: 8px; overflow: hidden; margin: 10px 0 6px; }
+  .barra-prog i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .log { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+  .manual p { margin-bottom: 8px; line-height: 1.55; } .manual ol, .manual ul { margin: 0 0 12px 20px; line-height: 1.65; }
+
+  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 50; }
+  #flash.ok { background: rgba(14,132,32,.35); animation: fl .45s ease-out; }
+  #flash.erro { background: rgba(199,22,43,.4); animation: fl .6s ease-out; }
+  @keyframes fl { 0% { opacity: 1; } 100% { opacity: 0; } }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 16px; }
+  .modal[hidden] { display: none; }
+  .modal-box { background: var(--panel); border-radius: 12px; padding: 18px; width: 100%; max-width: 420px; max-height: 90vh; overflow: auto; }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 84px; background: var(--text); color: #fff; padding: 11px 16px; border-radius: 8px; font-weight: 600; display: none; z-index: 70; max-width: 92vw; text-align: center; }
+  .toast.erro { background: var(--bad); }
+  .aviso { background: var(--warn-bg); border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-weight: 500; }
+
+  #printArea { display: none; }
+  @media print {
+    body > *:not(#printArea) { display: none !important; }
+    #printArea { display: block; color: #000; font-size: 11px; padding: 8mm; }
+    #printArea h1 { font-size: 18px; margin-bottom: 4px; }
+    #printArea table { min-width: 0; width: 100%; font-size: 10px; }
+    #printArea th { position: static; background: #eee; color: #000; }
+    .assin { display: flex; gap: 40px; margin-top: 40px; }
+    .assin div { flex: 1; border-top: 1px solid #000; padding-top: 4px; text-align: center; }
+    @page { margin: 8mm; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="topo">
+    <h1>Sistema de Inventário</h1>
+    <span class="pill" id="pillSync">Estoque Tiny: sem sincronização</span>
+  </div>
+
+  <nav class="nav" id="nav">
+    <button data-tab="bipar" class="on"><span class="ic">📷</span>Bipar</button>
+    <button data-tab="recontar"><span class="ic">🔁</span>Recontar<span class="bdg" id="bdgRec" hidden>0</span></button>
+    <button data-tab="relatorio"><span class="ic">📊</span>Relatório</button>
+    <button data-tab="config"><span class="ic">⚙️</span>Config</button>
+    <button data-tab="ajuda"><span class="ic">❓</span>Ajuda</button>
+  </nav>
+
+  <!-- ===== BIPAR ===== -->
+  <section class="view on" id="v-bipar">
+    <div class="card">
+      <div class="grade3">
+        <div class="campo"><label for="operador">Operador</label><input id="operador" autocomplete="off" placeholder="Seu nome"></div>
+        <div class="campo"><label for="lote">Lote / Localização</label><input id="lote" autocomplete="off" placeholder="Ex: Lote 01 - Prateleira Thule"></div>
+        <div class="campo"><label for="empresa">Empresa</label><select id="empresa"><option value="CONSOLIDADO">Consolidado</option></select></div>
+      </div>
+      <div class="opcoes">
+        <div class="seg" role="group" aria-label="Modo de contagem"><button id="mAuto" class="on" type="button">+1 Automático</button><button id="mManual" type="button">Qtd Manual / Caixa</button></div>
+        <label class="sw"><input type="checkbox" id="cega"> Contagem cega</label>
+        <label class="sw"><input type="checkbox" id="leitor"> Leitor Bluetooth/USB</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <label for="codigo">Código de barras, SKU ou nome do produto</label>
+      <input id="codigo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Bipe ou digite e aperte Enter">
+      <div id="sugestoes"></div>
+      <div class="btns">
+        <button class="btn principal grande" id="btnCam" type="button">📷 Escanear com Câmera</button>
+        <button class="btn grande" id="btnNC" type="button">➕ Item não catalogado</button>
+      </div>
+      <div id="camBox" hidden>
+        <div id="reader"></div>
+        <div class="btns linha">
+          <button class="btn" id="btnTorch" type="button">🔦 Lanterna</button>
+          <button class="btn" id="btnTroca" type="button">🔄 Trocar</button>
+          <button class="btn perigo" id="btnFechaCam" type="button">✖ Fechar</button>
+        </div>
+        <small id="camMsg"></small>
+      </div>
+      <div id="fallbackFoto" hidden class="aviso" style="margin-top:10px">
+        A câmera ao vivo não abriu neste navegador. Você ainda pode tirar uma foto do código de barras:
+        <button class="btn suave grande" id="btnFoto" type="button" style="margin-top:8px">📸 Tirar foto do código</button>
+      </div>
+      <input type="file" id="foto" accept="image/*" capture="environment" hidden>
+      <div id="readerTmp" hidden></div>
+
+      <div id="manualBox" class="card" style="margin:12px 0 0;border-color:var(--accent)" hidden>
+        <div id="manualInfo"></div>
+        <div class="grade3" style="margin-top:10px">
+          <div class="campo"><label for="qtdManual">Quantidade contada</label><input id="qtdManual" type="number" inputmode="numeric" min="1" step="1" placeholder="Ex: 16"></div>
+        </div>
+        <div class="btns"><button class="btn principal grande" id="btnConfManual" type="button">Confirmar quantidade</button><button class="btn grande" id="btnCancManual" type="button">Cancelar</button></div>
+      </div>
+    </div>
+
+    <div class="aviso" id="filaInfo" hidden></div>
+    <div class="card ultimo" id="ultimo" hidden></div>
+
+    <div class="card">
+      <h3>Meus lançamentos nesta sessão</h3>
+      <div id="lanc"><div class="vazio">Nenhum lançamento ainda.</div></div>
+      <button class="btn perigo grande" id="btnDesfazer" type="button" style="margin-top:10px">↩️ Desfazer Meu Último Bip</button>
+    </div>
+  </section>
+
+  <!-- ===== RECONTAR ===== -->
+  <section class="view" id="v-recontar">
+    <div class="card"><h2>Fila de recontagem</h2>
+      <p class="meta" style="margin-bottom:10px">Itens que o gestor pediu para conferir de novo. Conte a prateleira outra vez: a nova contagem substitui a anterior naquele lote.</p>
+      <div id="listaRec"><div class="vazio">Carregando...</div></div>
+    </div>
+  </section>
+
+  <!-- ===== RELATÓRIO ===== -->
+  <section class="view" id="v-relatorio">
+    <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div class="campo" style="min-width:200px;flex:1"><label for="empBase">Base de comparação</label><select id="empBase"><option value="CONSOLIDADO">Consolidado</option></select></div>
+      <button class="btn suave" id="btnRel" type="button">🔄 Atualizar relatório</button>
+      <button class="btn" id="btnCsv" type="button">⬇️ Baixar CSV</button>
+      <button class="btn" id="btnCopiaCsv" type="button">📋 Copiar CSV</button>
+      <button class="btn" id="btnPrint" type="button">🖨️ Imprimir / PDF</button>
+      <button class="btn" id="btnGravaRel" type="button">📄 Gravar na planilha</button>
+      <button class="btn perigo" id="btnArquivar" type="button">📁 Encerrar e Arquivar</button>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="chips" id="chips"></div>
+    <div class="barra">
+      <input id="buscaRel" type="search" placeholder="Buscar SKU, EAN ou descrição" aria-label="Buscar no relatório">
+      <select id="ordemRel" aria-label="Ordenar">
+        <option value="diverg">Maior divergência</option><option value="valor">Maior valor (R$)</option><option value="sku">SKU</option>
+      </select>
+      <span class="pill" id="infoRel" style="align-self:center;text-align:center"></span>
+    </div>
+    <div class="rolagem"><table><thead><tr>
+      <th>SKU</th><th>EAN</th><th>Descrição</th><th class="n">Estoque Tiny (por empresa)</th><th class="n">Qtd contada</th><th class="n">Divergência</th><th class="n">Impacto R$</th><th>Status</th><th></th>
+    </tr></thead><tbody id="tbRel"><tr><td colspan="9" class="vazio">Abra esta aba para carregar o relatório.</td></tr></tbody></table></div>
+    <div class="card" id="ncBox" style="margin-top:12px" hidden></div>
+  </section>
+
+  <!-- ===== CONFIG ===== -->
+  <section class="view" id="v-config">
+    <div class="card"><h2>Empresas Tiny (API v2)</h2>
+      <p class="meta">O token fica guardado no servidor e nunca volta para esta tela. Deixe o campo do token vazio para manter o atual.</p>
+      <div id="empresasCfg"></div>
+      <div class="btns"><button class="btn" id="btnAddEmp" type="button">➕ Adicionar empresa</button><button class="btn principal" id="btnSalvaCfg" type="button">Salvar configurações</button></div>
+      <div class="grade3" style="margin-top:12px">
+        <div class="campo"><label for="reqMin">Requisições por minuto, por empresa</label><input id="reqMin" type="number" min="5" max="300" inputmode="numeric"></div>
+      </div>
+      <p class="meta">Padrão seguro: 30. Se o seu plano do Tiny permite mais, aumente para sincronizar mais rápido.</p>
+      <div class="grade3" style="margin-top:10px">
+        <div class="campo"><label for="refEst">Estoque de referência para a contagem</label>
+          <select id="refEst"><option value="DISPONIVEL">Disponível (saldo − reservado)</option><option value="FISICO">Saldo físico</option></select></div>
+        <div class="campo"><label>Catálogo em cache</label><button class="btn" id="btnCat" type="button">Recarregar catálogo</button></div>
+      </div>
+      <p class="meta">A sincronização importa automaticamente todos os produtos ativos do Tiny para o catálogo e separa o estoque disponível de cada empresa.</p>
+    </div>
+
+    <div class="card"><h2>1) Importar produtos ativos do Tiny</h2>
+      <p class="meta" style="margin-bottom:10px">Só traz SKU, EAN, descrição e custo (rápido). O estoque vem das planilhas abaixo.</p>
+      <label class="sw" style="margin-bottom:10px"><input type="checkbox" id="syncCustos" checked> Atualizar também o preço de custo</label>
+      <button class="btn principal grande" id="btnSync" type="button">🔄 Importar Produtos do Tiny</button>
+      <div class="barra-prog"><i id="progSync"></i></div>
+      <div class="log" id="logSync">Nenhuma sincronização em andamento.</div>
+      <button class="btn perigo mini" id="btnCancSync" type="button" hidden>Parar</button>
+    </div>
+
+    <div class="card"><h2>2) Estoque por empresa (planilha "Saldos em Estoque" do Tiny)</h2>
+      <p class="meta">Exporte em cada empresa o relatório de saldos (.xls/.xlsx/.csv) e envie no botão da empresa correspondente. Produtos que não estão na planilha ficam com estoque 0.</p>
+      <div class="est-grid" id="estoqueEmp"></div>
+      <input type="file" id="fileEst" accept=".xls,.xlsx,.csv" hidden>
+      <div class="log" id="logEst" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card"><h2>PIN de proteção</h2>
+      <p class="meta" id="pinInfo"></p>
+      <div class="grade3" style="margin-top:8px">
+        <div class="campo"><label for="pinAtual">PIN atual</label><input id="pinAtual" type="password" autocomplete="off"></div>
+        <div class="campo"><label for="pinNovo">Novo PIN (vazio remove)</label><input id="pinNovo" type="password" autocomplete="off"></div>
+      </div>
+      <button class="btn suave" id="btnPin" type="button">Salvar PIN</button>
+    </div>
+  </section>
+
+  <!-- ===== AJUDA ===== -->
+  <section class="view" id="v-ajuda">
+    <div class="card manual">
+      <h2>❓ Manual de uso</h2>
+      <h3>Para o operador (celular)</h3>
+      <ol>
+        <li><b>Identificação:</b> escolha seu nome em <i>Operador</i> e digite o <i>Lote / Localização</i> onde está (ex.: Lote 01 - Prateleira Thule). O app lembra dos dois.</li>
+        <li><b>Bipar com a câmera:</b> toque em <i>Escanear com Câmera</i> e aponte para o código de barras. A câmera fica aberta e lê um item após o outro. No corredor escuro use <i>Lanterna</i>; use <i>Trocar</i> se abrir a câmera errada. Se a câmera ao vivo não abrir, use <i>Tirar foto do código</i>.</li>
+        <li><b>Leitor Bluetooth/USB:</b> marque <i>Leitor Bluetooth/USB</i>, deixe o cursor no campo de código e aperte o gatilho. O teclado do celular não aparece.</li>
+        <li><b>Etiqueta rasurada:</b> digite parte do SKU (ex.: 710600) ou do nome (ex.: Forerunner) e toque no item da lista.</li>
+        <li><b>Peças soltas:</b> deixe em <i>+1 Automático</i>: cada bip soma 1. O mesmo código só repete após 2 segundos na câmera.</li>
+        <li><b>Caixa fechada:</b> mude para <i>Qtd Manual</i>, bipe 1 vez, digite o total contado (ex.: 16) e confirme.</li>
+        <li><b>Errou?</b> Toque em <i>Desfazer Meu Último Bip</i>. Só o seu último lançamento é removido, sem afetar os colegas.</li>
+        <li><b>Peça sem cadastro:</b> use <i>Item não catalogado</i>, descreva a peça e a quantidade para regularizar depois no Tiny.</li>
+        <li><b>Contagem cega:</b> quando ligada, o saldo do Tiny fica escondido, para não influenciar quem conta.</li>
+        <li><b>Recontagem:</b> a aba <i>Recontar</i> mostra os itens que o gestor pediu para conferir de novo.</li>
+      </ol>
+      <h3>Para o gestor</h3>
+      <ol>
+        <li><b>Antes de começar:</b> pause emissões/baixas no Tiny durante a contagem. Em <i>Config</i>, cadastre as empresas e o token da API v2, use <i>Testar Conexão</i> e rode <i>Importar Produtos e Sincronizar Estoque Tiny</i> até 100%. Isso importa todos os produtos ativos e grava o estoque disponível individual de cada empresa.</li>
+        <li><b>Definir o modo:</b> contagem cega é recomendada na primeira contagem.</li>
+        <li><b>Analisar:</b> em <i>Relatório</i>, filtre por Divergentes e ordene por maior divergência ou maior valor.</li>
+        <li><b>Recontagem:</b> em itens com Falta ou Sobra, clique em <i>Recontar</i>. O item vai para a fila do operador.</li>
+        <li><b>Fechar:</b> gere o <i>PDF</i> (Imprimir / PDF) para assinatura, baixe o <i>CSV</i> para o ajuste de balanço no Tiny e clique em <i>Encerrar e Arquivar</i>: salva as abas históricas e zera a contagem para o próximo ciclo.</li>
+      </ol>
+      <h3>Status do relatório</h3>
+      <ul><li><b>OK:</b> contado = estoque. <b>Falta:</b> contado menor. <b>Sobra:</b> contado maior. <b>Recontar:</b> na fila de segunda conferência. <b>Pendente:</b> ainda não foi contado.</li></ul>
+    </div>
+  </section>
+</div>
+
+<div id="flash"></div>
+<div class="modal" id="modal" hidden><div class="modal-box" id="modalBox"></div></div>
+<div class="toast" id="toast"></div>
+<div id="printArea"></div>
+
+<script>
+  // ============================ UTILITÁRIOS ============================
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const BRL = v => (v == null ? 0 : v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const NUM = v => v == null ? '-' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+  const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  // Cole abaixo a URL /exec do seu Web App do Google Apps Script:
+  const GAS_URL = 'COLE_AQUI_A_URL_DO_SEU_WEB_APP_EXEC';
+
+  const srv = async (fn, ...a) => {
+    const usaGasNat = typeof google !== 'undefined' && google.script && google.script.run;
+    if (usaGasNat) {
+      return new Promise((ok, no) => {
+        const r = google.script.run.withSuccessHandler(ok).withFailureHandler(no);
+        r[fn](...a);
+      });
+    }
+    if (!GAS_URL || !GAS_URL.startsWith('https://script.google.com/')) {
+      throw new Error('Configure a URL do Google Apps Script (GAS_URL) no index.html.');
+    }
+    const resp = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita preflight OPTIONS (CORS)
+      body: JSON.stringify({ fn: fn, args: a }),
+      redirect: 'follow'
+    });
+    if (!resp.ok) throw new Error('Erro HTTP ' + resp.status + ' ao conectar com o servidor.');
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'Erro desconhecido no servidor.');
+    return json.data;
+  };
+  const REFTXT = { FISICO: 'saldo físico', DISPONIVEL: 'disponível (saldo − reservado)' };
+  const msgErro = e => (e && e.message) ? e.message.replace(/^Error:\s*/, '') : String(e);
+
+  const S = { tab: 'bipar', temPin: false, pin: '', empresas: [], catalogo: [], catPronto: false, bips: [], rec: [], modo: 'auto', ocupado: false,
+              rel: null, filtro: 'todos', ultimoSync: null, qr: null, cams: [], camIdx: 0, torch: false, ultimoCodigo: '', ultimoCodigoEm: 0,
+              cancelaSync: false, cfg: null, idxSku: null, idxEan: null, dupTxt: '', dupT: 0, limite: 400, enviando: false };
+  let toastT;
+  const dorme = ms => new Promise(r => setTimeout(r, ms));
+  const novoId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+
+  function saldoHtml(s, sku) {
+    if (!s) return '';
+    const emp = s.porEmpresa.map(e => {
+      if (e.erro) return `<span>${esc(e.nome)}: <b>erro</b></span>`;
+      if (e.saldo === null || e.saldo === undefined) return `<span>${esc(e.nome)}: <b>—</b></span>`;
+      const det = e.reservado ? ` <small>(${NUM(e.fisico)} fís. − ${NUM(e.reservado)} res.)</small>` : '';
+      return `<span>${esc(e.nome)}: <b>${NUM(e.saldo)}</b>${det}</span>`;
+    }).join('');
+    return `<div class="saldoBox"><div class="saldos">${emp}<span>Total: <b>${NUM(s.total)}</b></span></div>
+      <div class="meta">${s.aoVivo ? 'Consultado no Tiny agora' : 'Última planilha de estoque importada' + (S.ultimoSync ? ' · produtos: ' + esc(S.ultimoSync.quando) : '')} · ${REFTXT[s.ref] || ''}</div></div>`;
+  }
+  async function consultaVivo(e) {
+    const b = e.target.closest('[data-vivo]'); if (!b) return;
+    const sku = b.dataset.vivo; b.disabled = true; b.textContent = 'Consultando o Tiny...';
+    try {
+      const r = await srv('consultarSaldoAoVivo', sku);
+      if (!r.sucesso) { toast(r.msg, true); b.disabled = false; b.textContent = '🔄 Consultar Tiny agora'; return; }
+      b.closest('.saldoBox').outerHTML = saldoHtml(r.saldo, sku);
+    } catch (er) { toast(msgErro(er), true); b.disabled = false; b.textContent = '🔄 Consultar Tiny agora'; }
+  }
+  function toast(msg, erro) { const t = $('toast'); t.textContent = msg; t.className = 'toast' + (erro ? ' erro' : ''); t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', erro ? 4500 : 2600); }
+
+  // ============================ FEEDBACK SENSORIAL ============================
+  function feedback(ok) {
+    try {
+      const c = S.ac || (S.ac = new (window.AudioContext || window.webkitAudioContext)());
+      if (c.state === 'suspended') c.resume();
+      const tom = (f, ini, dur, tipo) => { const o = c.createOscillator(), g = c.createGain(); o.type = tipo; o.frequency.value = f;
+        g.gain.setValueAtTime(0.35, c.currentTime + ini); g.gain.exponentialRampToValueAtTime(0.01, c.currentTime + ini + dur);
+        o.connect(g); g.connect(c.destination); o.start(c.currentTime + ini); o.stop(c.currentTime + ini + dur + 0.02); };
+      if (ok) tom(1500, 0, 0.12, 'sine'); else { tom(190, 0, 0.22, 'sawtooth'); tom(190, 0.28, 0.22, 'sawtooth'); }
+    } catch (e) {}
+    try { if (navigator.vibrate) navigator.vibrate(ok ? 60 : [130, 70, 130]); } catch (e) {}
+    const f = $('flash'); f.className = ''; void f.offsetWidth; f.className = ok ? 'ok' : 'erro';
+  }
+
+  // ============================ MODAL / PIN ============================
+  function modal(html) { $('modalBox').innerHTML = html; $('modal').hidden = false; }
+  function fechaModal() { $('modal').hidden = true; $('modalBox').innerHTML = ''; }
+  function pedirPin() {
+    return new Promise(res => {
+      modal(`<h2>PIN do gestor</h2><div class="campo"><label for="mPin">Digite o PIN para continuar</label><input id="mPin" type="password" autocomplete="off"></div>
+        <div class="btns"><button class="btn principal" id="mOk">Entrar</button><button class="btn" id="mCancela">Cancelar</button></div>`);
+      const pin = $('mPin'); pin.focus();
+      const fim = v => { fechaModal(); res(v); };
+      $('mOk').onclick = () => fim(pin.value); $('mCancela').onclick = () => fim(null);
+      pin.onkeydown = e => { if (e.key === 'Enter') fim(pin.value); };
+    });
+  }
+  async function garantirPin() {
+    if (!S.temPin || S.pin) return true;
+    const p = await pedirPin(); if (p === null) return false;
+    try { await srv('validarPin', p); S.pin = p; return true; } catch (e) { toast(msgErro(e), true); return false; }
+  }
+  async function adm(fn, ...a) {
+    try { return await srv(fn, S.pin, ...a); }
+    catch (e) { if (/PIN inv/i.test(msgErro(e))) S.pin = ''; throw e; }
+  }
+
+  // ============================ NAVEGAÇÃO ============================
+  async function irPara(tab) {
+    if ((tab === 'relatorio' || tab === 'config') && !(await garantirPin())) return;
+    if (tab !== 'bipar') fecharCamera();
+    S.tab = tab;
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + tab));
+    document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+    window.scrollTo(0, 0);
+    if (tab === 'recontar') carregarRec();
+    if (tab === 'relatorio') carregarRelatorio();
+    if (tab === 'config') carregarConfig();
+    if (tab === 'bipar') refoco();
+  }
+  $('nav').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) irPara(b.dataset.tab); });
+
+  // ============================ BIPAGEM ============================
+  function refoco() {
+    if (S.tab !== 'bipar' || S.qr) return;
+    const finePointer = window.matchMedia && window.matchMedia('(pointer:fine)').matches;
+    if (finePointer || $('leitor').checked) $('codigo').focus();
+  }
+  function aplicaLeitor() { $('codigo').setAttribute('inputmode', $('leitor').checked ? 'none' : 'text'); ls.set('inv_leitor', $('leitor').checked ? '1' : '0'); }
+
+  function setup() {
+    const operador = $('operador').value.trim(), lote = $('lote').value.trim();
+    if (!operador || !lote) { toast('Informe o operador e o lote antes de bipar.', true); (!operador ? $('operador') : $('lote')).focus(); feedback(false); return null; }
+    ls.set('inv_operador', operador); ls.set('inv_lote', lote);
+    return { operador, lote, empresa: $('empresa').value || 'CONSOLIDADO' };
+  }
+
+  // Índices separados para SKU e EAN (evita colisão de SKU numérico curto com EAN)
+  function eanFmt(t) { let x = String(t || '').trim(); if (x.indexOf('.') !== -1) x = x.split('.')[0]; x = x.replace(/\D/g, ''); if (x.length > 0 && x.length < 13) x = x.padStart(13, '0'); return x; }
+  function indexaCatalogo() {
+    S.idxSku = new Map();
+    S.idxEan = new Map();
+    S.catalogo.forEach(c => {
+      c.n = norm(c.sku + ' ' + c.desc + ' ' + c.ean);
+      [c.sku, String(c.sku).toUpperCase()].forEach(k => { if (k && !S.idxSku.has(k)) S.idxSku.set(k, c); });
+      if (c.ean && !S.idxEan.has(c.ean)) S.idxEan.set(c.ean, c);
+    });
+  }
+  function acharLocal(texto) {
+    if (!S.idxSku) return null;
+    const cod = String(texto).trim();
+    if (!cod) return null;
+    return S.idxSku.get(cod) || S.idxSku.get(cod.toUpperCase()) || S.idxEan.get(eanFmt(cod)) || S.idxEan.get(cod) || null;
+  }
+
+  let sugT;
+  function sugerir() { clearTimeout(sugT); sugT = setTimeout(sugerirAgora, 150); }
+  function sugerirAgora() {
+    const q = norm($('codigo').value).trim(), box = $('sugestoes');
+    if (q.length < 3 || /^\d{8,}$/.test(q)) { box.innerHTML = ''; return; }
+    const termos = q.split(/\s+/);
+    const lista = S.catalogo.filter(c => termos.every(x => c.n.includes(x))).slice(0, 8);
+    box.innerHTML = lista.map(c => `<button type="button" data-sku="${esc(c.sku)}">${esc(c.desc)}<small>SKU ${esc(c.sku)} · EAN ${esc(c.ean)}</small></button>`).join('');
+  }
+
+  async function processarEntrada(texto) {
+    texto = String(texto || '').trim();
+    if (!texto) return;
+    const agora = Date.now();
+    if (texto === S.dupTxt && agora - S.dupT < 300) return;
+    S.dupTxt = texto; S.dupT = agora;
+    const st = setup(); if (!st) return;
+    $('sugestoes').innerHTML = ''; $('codigo').value = '';
+    try { if (S.modo === 'manual') await abrirManualPorTexto(texto); else enfileirar(texto, st, 1, false, null); }
+    finally { refoco(); }
+  }
+
+  function enfileirar(texto, st, qtd, manual, conhecido) {
+    const it = conhecido ? { sku: conhecido.sku, ean: conhecido.ean, desc: conhecido.descricao } : acharLocal(texto);
+    if (!it && S.catPronto && S.catalogo.length) {
+      mostraResultado({ sucesso: false, msg: '❌ Produto não encontrado: ' + texto + ' (se acabou de cadastrar no Tiny, sincronize em Config)' });
+      feedback(false); return;
+    }
+    const item = { id: novoId(), codigo: it ? it.sku : texto, qtd: qtd, manual: manual, lote: st.lote, operador: st.operador, empresa: st.empresa,
+      desc: it ? it.desc : texto, sku: it ? it.sku : texto, tipo: manual ? 'MANUAL' : 'BIP', estado: 'fila',
+      hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) };
+    S.bips.unshift(item);
+    feedback(true);
+    mostraResultado({ sucesso: true, qtd: qtd, produto: { sku: item.sku, ean: it ? it.ean : '', descricao: item.desc }, tipo: item.tipo, pendente: true });
+    renderLanc(); salvaFila(); statusFila(); processaFila();
+  }
+
+  const pendentes = () => S.bips.filter(x => x.estado === 'fila' || x.estado === 'enviando');
+  function salvaFila() { ls.set('inv_fila', JSON.stringify(pendentes().map(x => Object.assign({}, x, { estado: 'fila' })))); }
+  function statusFila(msg) {
+    const n = pendentes().length, e = $('filaInfo');
+    e.hidden = !n; if (n) e.textContent = '⏳ ' + n + ' bip(s) aguardando envio' + (msg ? ' — sem conexão com o servidor, tentando de novo...' : '');
+  }
+  function restauraFila() {
+    try { const a = JSON.parse(ls.get('inv_fila') || '[]'); if (a.length) { S.bips = a; toast(a.length + ' bip(s) pendentes serão reenviados'); renderLanc(); statusFila(); processaFila(); } } catch (e) {}
+  }
+
+  async function processaFila() {
+    if (S.enviando) return;
+    S.enviando = true; let falhas = 0;
+    try {
+      for (;;) {
+        const lote = S.bips.filter(x => x.estado === 'fila').reverse().slice(0, 25);
+        if (!lote.length) break;
+        lote.forEach(x => x.estado = 'enviando'); renderLanc(); statusFila();
+        try {
+          const r = await srv('registrarLote', lote.map(x => ({ id: x.id, codigo: x.codigo, qtd: x.qtd, manual: x.manual, lote: x.lote, operador: x.operador, empresa: x.empresa })), $('cega').checked);
+          falhas = 0;
+          const porId = {}; (r.resultados || []).forEach(z => { porId[z.id] = z; });
+          lote.forEach(x => {
+            const z = porId[x.id];
+            if (z && z.sucesso) { x.estado = 'ok'; if (z.tipo) x.tipo = z.tipo; }
+            else { x.estado = 'erro'; x.msg = z ? z.msg : 'Sem resposta do servidor'; toast(x.msg, true); feedback(false); }
+          });
+          if (r.ultimo && !pendentes().length) mostraResultado(r.ultimo);
+        } catch (e) {
+          lote.forEach(x => x.estado = 'fila'); falhas++;
+          statusFila(msgErro(e));
+          await dorme(Math.min(1000 * Math.pow(2, falhas), 10000));
+        }
+        S.bips = S.bips.filter((b, i) => i < 40 || b.estado === 'fila' || b.estado === 'enviando');
+        renderLanc(); salvaFila();
+      }
+    } finally { S.enviando = false; salvaFila(); statusFila(); renderLanc(); }
+  }
+
+  function mostraResultado(r) {
+    const u = $('ultimo'); u.hidden = false; u.className = 'card ultimo' + (r.sucesso ? '' : ' erro');
+    if (!r.sucesso) { u.innerHTML = `<div class="desc">${esc(r.msg)}</div>`; return; }
+    const saldo = saldoHtml(r.saldo, r.produto.sku);
+    u.innerHTML = `<div class="mais">+${r.qtd}</div><div class="desc">${esc(r.produto.descricao)}</div>
+      <div class="meta">SKU ${esc(r.produto.sku)} · EAN ${esc(r.produto.ean || '-')} ${r.tipo === 'RECONTAGEM' ? '<span class="tag rec">RECONTAGEM</span>' : ''}</div>
+      ${r.pendente ? '<div class="meta">⏳ Enviando...</div>' : `<div class="meta">Neste lote: <b>${r.qtdLote}</b> · Total contado do item: <b>${r.qtdTotal}</b></div>`}${saldo}`;
+  }
+
+  function renderLanc() {
+    const ico = { fila: '⏳', enviando: '⏳', ok: '✓', erro: '⚠️' };
+    $('lanc').innerHTML = S.bips.length ? S.bips.slice(0, 10).map(b => `<div class="lanc"><div>${ico[b.estado] || ''} <b>${b.qtd}x</b> ${esc(b.desc)}<div class="meta">SKU ${esc(b.sku)} · ${b.hora}${b.estado === 'erro' ? ' · <span style="color:var(--bad)">' + esc(b.msg || 'erro') + '</span>' : ''}</div></div>${b.tipo === 'RECONTAGEM' ? '<span class="tag rec">recontagem</span>' : ''}</div>`).join('')
+      : '<div class="vazio">Nenhum lançamento ainda.</div>';
+  }
+
+  async function abrirManualPorTexto(texto) {
+    if (S.ocupado) return; S.ocupado = true;
+    try {
+      if ($('cega').checked && S.idxSku) {
+        const it = acharLocal(texto);
+        if (!it) { mostraResultado({ sucesso: false, msg: '❌ Produto não encontrado: ' + texto }); feedback(false); return; }
+        abreManual({ produto: { sku: it.sku, ean: it.ean, descricao: it.desc } }); feedback(true);
+      } else {
+        const r = await srv('buscarProduto', texto, $('cega').checked);
+        if (!r.sucesso) { mostraResultado(r); feedback(false); } else { abreManual(r); feedback(true); }
+      }
+    } catch (e) { toast('Falha de conexão: ' + msgErro(e), true); feedback(false); }
+    finally { S.ocupado = false; }
+  }
+
+  function abreManual(r) {
+    S.item = r.produto;
+    $('manualInfo').innerHTML = `<div class="desc" style="font-weight:700">${esc(r.produto.descricao)}</div><div class="meta">SKU ${esc(r.produto.sku)} · EAN ${esc(r.produto.ean || '-')}</div>` +
+      saldoHtml(r.saldo, r.produto.sku);
+    $('manualBox').hidden = false; $('qtdManual').value = ''; $('qtdManual').focus();
+  }
+  function confirmaManual() {
+    const q = parseInt($('qtdManual').value), st = setup();
+    if (!S.item || !st) return;
+    if (!(q >= 1)) { toast('Digite a quantidade contada.', true); feedback(false); return; }
+    enfileirar(S.item.sku, st, q, true, S.item);
+    $('manualBox').hidden = true; S.item = null; refoco();
+  }
+  function fechaManual() { $('manualBox').hidden = true; S.item = null; refoco(); }
+
+  function setModo(m) {
+    S.modo = m; $('mAuto').classList.toggle('on', m === 'auto'); $('mManual').classList.toggle('on', m === 'manual');
+    ls.set('inv_modo', m); if (m === 'auto') fechaManual();
+  }
+
+  // ============================ CÂMERA (html5-qrcode) ============================
+  async function abrirCamera() {
+    if (!setup()) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      $('fallbackFoto').hidden = false;
+      toast('Este navegador/app não suporta câmera ao vivo. Abra o link diretamente no Chrome ou Safari.', true);
+      return;
+    }
+    if (typeof Html5Qrcode === 'undefined') {
+      $('fallbackFoto').hidden = false;
+      toast('Leitor de câmera indisponível. Use a foto ou digite o código.', true);
+      return;
+    }
+    if (S.qr) return;
+    $('camBox').hidden = false;
+    $('camMsg').textContent = 'Solicitando permissão da câmera...';
+    try {
+      await iniciaCamera(true);
+      if (!S.cams.length) {
+        try { S.cams = await Html5Qrcode.getCameras(); } catch (e) {}
+      }
+    } catch (e) {
+      await fecharCamera();
+      $('fallbackFoto').hidden = false;
+      const err = msgErro(e);
+      if (/NotAllowed|Permission/i.test(err)) {
+        toast('Permissão da câmera negada. Toque no cadeado ao lado do endereço no navegador e permita a câmera.', true);
+      } else {
+        toast('Não foi possível abrir a câmera: ' + err, true);
+      }
+    }
+  }
+  async function iniciaCamera(usarTraseiraPadrao) {
+    const F = window.Html5QrcodeSupportedFormats;
+    const cfg = { verbose: false, useBarCodeDetectorIfSupported: true };
+    if (F) cfg.formatsToSupport = [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE];
+    S.qr = new Html5Qrcode('reader', cfg);
+    const cameraConfig = (!usarTraseiraPadrao && S.cams.length)
+      ? S.cams[S.camIdx].id
+      : { facingMode: 'environment' };
+    const scanCfg = {
+      fps: 15,
+      qrbox: (w, h) => ({
+        width: Math.min(340, Math.floor(w * 0.88)),
+        height: Math.min(160, Math.floor(h * 0.45))
+      })
+    };
+    await S.qr.start(cameraConfig, scanCfg, onLeitura, () => {});
+    $('camMsg').textContent = 'Leitura contínua ativa. Aponte para o código de barras.';
+  }
+  function onLeitura(texto) {
+    const agora = Date.now();
+    if (texto === S.ultimoCodigo && agora - S.ultimoCodigoEm < 2000) return;
+    S.ultimoCodigo = texto; S.ultimoCodigoEm = agora;
+    processarEntrada(texto);
+  }
+  async function fecharCamera() {
+    const q = S.qr; S.qr = null; S.torch = false;
+    if (q) { try { await q.stop(); q.clear(); } catch (e) {} }
+    $('camBox').hidden = true; $('btnTorch').classList.remove('suave');
+  }
+  async function alternaLanterna() {
+    if (!S.qr) return;
+    try { S.torch = !S.torch; await S.qr.applyVideoConstraints({ advanced: [{ torch: S.torch }] }); $('btnTorch').classList.toggle('suave', S.torch); }
+    catch (e) { S.torch = false; toast('Este aparelho/navegador não permite controlar a lanterna.', true); }
+  }
+  async function trocaCamera() {
+    if (!S.qr || S.cams.length < 2) { toast('Só há uma câmera disponível.', true); return; }
+    try { await S.qr.stop(); S.qr.clear(); } catch (e) {}
+    S.camIdx = (S.camIdx + 1) % S.cams.length;
+    try { await iniciaCamera(false); } catch (e) { fecharCamera(); toast('Falha ao trocar a câmera.', true); }
+  }
+  async function lerFoto(file) {
+    if (!file || typeof Html5Qrcode === 'undefined') return;
+    try { const q = new Html5Qrcode('readerTmp'); const txt = await q.scanFile(file, false); try { q.clear(); } catch (e) {} processarEntrada(txt); }
+    catch (e) { toast('Não consegui ler o código na foto. Tente de perto, com boa luz.', true); feedback(false); }
+    $('foto').value = '';
+  }
+
+  async function desfazer() {
+    const op = $('operador').value.trim();
+    if (!op) { toast('Informe o operador.', true); return; }
+    const alvo = S.bips.find(b => b.operador === op && b.estado !== 'erro');
+    if (alvo && alvo.estado === 'fila') {
+      S.bips.splice(S.bips.indexOf(alvo), 1); salvaFila(); renderLanc(); statusFila(); feedback(true); toast('↩️ Desfeito (ainda não tinha sido enviado)'); return;
+    }
+    if (alvo && alvo.estado === 'enviando') { toast('Aguarde o envio terminar e toque de novo.', true); return; }
+    $('btnDesfazer').disabled = true;
+    try {
+      const r = await srv('desfazerUltimoBip', op);
+      toast(r.msg, !r.sucesso); feedback(!!r.sucesso);
+      if (r.sucesso) { const i = S.bips.findIndex(b => b.id === r.id); if (i !== -1) S.bips.splice(i, 1); else { const k = S.bips.findIndex(b => b.operador === op && b.estado === 'ok'); if (k !== -1) S.bips.splice(k, 1); } renderLanc(); $('ultimo').hidden = true; }
+    } catch (e) { toast(msgErro(e), true); }
+    finally { $('btnDesfazer').disabled = false; }
+  }
+
+  function abrirNC() {
+    if (!setup()) return;
+    modal(`<h2>Item não catalogado</h2><p class="meta" style="margin-bottom:10px">Peça encontrada no físico que não está na base. Fica registrada para regularizar no Tiny.</p>
+      <div class="campo"><label for="ncDesc">Descrição da peça</label><input id="ncDesc" autocomplete="off" placeholder="Ex: Suporte Thule sem etiqueta"></div>
+      <div class="campo" style="margin-top:10px"><label for="ncQtd">Quantidade</label><input id="ncQtd" type="number" inputmode="numeric" min="1" value="1"></div>
+      <div class="btns"><button class="btn principal" id="ncOk">Registrar</button><button class="btn" id="ncCancela">Cancelar</button></div>`);
+    $('ncDesc').focus(); $('ncCancela').onclick = fechaModal;
+    $('ncOk').onclick = async () => {
+      const st = setup(); if (!st) return; $('ncOk').disabled = true;
+      try {
+        const r = await srv('registrarNaoCatalogado', { descricao: $('ncDesc').value, qtd: $('ncQtd').value, lote: st.lote, operador: st.operador, empresa: st.empresa });
+        feedback(!!r.sucesso); toast(r.msg, !r.sucesso);
+        if (r.sucesso) { S.bips.unshift({ id: r.id, desc: r.produto.descricao + ' (não catalogado)', sku: r.produto.sku, qtd: r.qtd, tipo: 'NAO_CATALOGADO', hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }); renderLanc(); fechaModal(); }
+        else $('ncOk').disabled = false;
+      } catch (e) { toast(msgErro(e), true); $('ncOk').disabled = false; }
+    };
+  }
+
+  // ============================ RECONTAGEM (operador) ============================
+  async function carregarRec() {
+    try {
+      S.rec = await srv('listarRecontagens');
+      const b = $('bdgRec'); b.hidden = !S.rec.length; b.textContent = S.rec.length;
+      $('listaRec').innerHTML = S.rec.length ? S.rec.map(r => `<div class="lanc"><div><b>${esc(r.desc || r.sku)}</b><div class="meta">SKU ${esc(r.sku)}</div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn suave mini" data-rec="contar" data-sku="${esc(r.sku)}">Contar agora</button><button class="btn mini" data-rec="fim" data-sku="${esc(r.sku)}">Concluir</button></div></div>`).join('')
+        : '<div class="vazio">Nenhum item aguardando recontagem. 👍</div>';
+    } catch (e) { $('listaRec').innerHTML = '<div class="vazio">Não foi possível carregar a fila.</div>'; }
+  }
+  $('listaRec').addEventListener('click', async e => {
+    const b = e.target.closest('[data-rec]'); if (!b) return;
+    if (b.dataset.rec === 'contar') { await irPara('bipar'); setModo('manual'); processarEntrada(b.dataset.sku); }
+    else { b.disabled = true; try { await srv('concluirRecontagem', b.dataset.sku, $('operador').value.trim()); toast('Recontagem concluída'); } catch (er) { toast(msgErro(er), true); } carregarRec(); }
+  });
+
+  // ============================ RELATÓRIO ============================
+  const FILTROS = [['todos', 'Todos'], ['divergentes', 'Divergentes'], ['OK', 'OK'], ['Falta', 'Falta'], ['Sobra', 'Sobra'], ['Recontar', 'Recontar'], ['Pendente', 'Pendente'], ['Sem Tiny', 'Sem Tiny']];
+  async function carregarRelatorio() {
+    $('btnRel').disabled = true; $('tbRel').innerHTML = '<tr><td colspan="9" class="vazio">Calculando relatório...</td></tr>';
+    try { S.rel = await adm('obterRelatorio', $('empBase').value); renderRelatorio(); }
+    catch (e) { $('tbRel').innerHTML = `<tr><td colspan="9" class="vazio">${esc(msgErro(e))}</td></tr>`; if (/PIN/.test(msgErro(e))) irPara('bipar'); }
+    finally { $('btnRel').disabled = false; }
+  }
+  function filtraLinhas() {
+    const q = norm($('buscaRel').value).trim();
+    let l = S.rel.linhas.filter(x => {
+      if (S.filtro === 'divergentes') { if (!['Falta', 'Sobra', 'Recontar'].includes(x.status)) return false; }
+      else if (S.filtro !== 'todos' && x.status !== S.filtro) return false;
+      return !q || norm(x.sku + ' ' + x.ean + ' ' + x.desc).includes(q);
+    });
+    const o = $('ordemRel').value;
+    if (o === 'diverg') l.sort((a, b) => Math.abs(b.diverg || 0) - Math.abs(a.diverg || 0));
+    else if (o === 'valor') l.sort((a, b) => Math.abs(b.impacto || 0) - Math.abs(a.impacto || 0));
+    else l.sort((a, b) => a.sku.localeCompare(b.sku, 'pt-BR', { numeric: true }));
+    return l;
+  }
+  const tagStatus = s => `<span class="tag ${{ OK: 'ok', Falta: 'falta', Sobra: 'sobra', Recontar: 'rec' }[s] || ''}">${s}</span>`;
+
+  function renderRelatorio() {
+    const R = S.rel, k = R.kpis;
+    $('kpis').innerHTML = `
+      <div class="kpi"><small>SKUs na base</small><b>${k.totalSkus}</b></div>
+      <div class="kpi"><small>Progresso auditado</small><b>${k.progresso}%</b></div>
+      <div class="kpi ${k.divergentes ? 'neg' : 'pos'}"><small>Itens divergentes</small><b>${k.divergentes}</b></div>
+      <div class="kpi ${k.acuracidade >= 95 ? 'pos' : 'neg'}"><small>Acuracidade</small><b>${k.acuracidade}%</b></div>
+      <div class="kpi ${k.impactoLiquido < 0 ? 'neg' : k.impactoLiquido > 0 ? 'pos' : ''}"><small>Impacto líquido</small><b>${BRL(k.impactoLiquido)}</b></div>`;
+    const cont = st => st === 'divergentes' ? R.linhas.filter(x => ['Falta', 'Sobra', 'Recontar'].includes(x.status)).length : st === 'todos' ? R.linhas.length : R.linhas.filter(x => x.status === st).length;
+    $('chips').innerHTML = FILTROS.map(f => `<button class="chip ${S.filtro === f[0] ? 'on' : ''}" data-f="${f[0]}">${f[1]} (${cont(f[0])})</button>`).join('');
+    const linhas = filtraLinhas();
+    $('infoRel').textContent = `${linhas.length} itens · ${R.empresaBase} · ${R.geradoEm} · ${REFTXT[R.refEstoque] || ''}${k.semTiny ? ' · ' + k.semTiny + ' sem dado do Tiny' : ''}${k.ignorados ? ' · ' + k.ignorados + ' lançamentos de outra empresa/consolidado ficaram de fora' : ''}`;
+    $('tbRel').innerHTML = linhas.length ? linhas.slice(0, S.limite).map(l => `<tr>
+      <td class="mono">${esc(l.sku)}</td><td class="mono">${esc(l.ean)}</td><td>${esc(l.desc)}</td>
+      <td class="n"><b>${l.estoque === null ? '—' : NUM(l.estoque)}</b>${l.porEmpresa.map(e => `<small>${esc(e.nome)}: ${e.saldo === null ? '—' : NUM(e.saldo)}${e.reservado ? ' (' + NUM(e.reservado) + ' res.)' : ''}</small>`).join('')}</td>
+      <td class="n"><b>${NUM(l.contado)}</b>${l.lotes.map(x => `<small>${esc(x.lote)}: ${x.qtd}</small>`).join('')}</td>
+      <td class="n ${l.diverg < 0 ? 'neg' : l.diverg > 0 ? 'pos' : ''}">${l.diverg === null ? '-' : (l.diverg > 0 ? '+' : '') + NUM(l.diverg)}</td>
+      <td class="n ${l.impacto < 0 ? 'neg' : l.impacto > 0 ? 'pos' : ''}">${l.impacto === null ? '-' : BRL(l.impacto)}</td>
+      <td>${tagStatus(l.status)}${l.recontando ? '<small>recontagem em andamento</small>' : l.recontado ? '<small>já recontado</small>' : ''}</td>
+      <td>${['Falta', 'Sobra'].includes(l.status) ? `<button class="btn mini" data-recont="${esc(l.sku)}">Solicitar recontagem</button>` : ''}</td></tr>`).join('') + (linhas.length > S.limite ? `<tr><td colspan="9" class="vazio"><button class="btn" data-mais>Mostrar mais (${linhas.length - S.limite} restantes)</button></td></tr>` : '')
+      : '<tr><td colspan="9" class="vazio">Nenhum item para este filtro.</td></tr>';
+    const nc = $('ncBox'); nc.hidden = !R.naoCatalogados.length;
+    nc.innerHTML = R.naoCatalogados.length ? `<h3>Itens não catalogados (${R.naoCatalogados.length})</h3>` + R.naoCatalogados.map(x => `<div class="lanc"><div><b>${x.qtd}x</b> ${esc(x.desc)}<div class="meta">${esc(x.lote)} · ${esc(x.operador)} · ${esc(x.data)}</div></div></div>`).join('') : '';
+  }
+  $('chips').addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b && S.rel) { S.filtro = b.dataset.f; S.limite = 400; renderRelatorio(); } });
+  $('tbRel').addEventListener('click', async e => {
+    if (e.target.closest('[data-mais]')) { S.limite += 400; renderRelatorio(); return; }
+    const b = e.target.closest('[data-recont]'); if (!b) return;
+    b.disabled = true;
+    try { const r = await adm('solicitarRecontagem', b.dataset.recont); toast(r.msg); await carregarRelatorio(); carregarRec(); }
+    catch (er) { toast(msgErro(er), true); b.disabled = false; }
+  });
+  $('buscaRel').addEventListener('input', () => { S.limite = 400; if (S.rel) renderRelatorio(); });
+  $('ordemRel').addEventListener('change', () => { S.limite = 400; if (S.rel) renderRelatorio(); });
+  $('empBase').addEventListener('change', carregarRelatorio);
+  $('btnRel').addEventListener('click', carregarRelatorio);
+
+  async function baixaCsv(copiar) {
+    try {
+      const r = await adm('exportarCsv', $('empBase').value);
+      if (!r.itens) { toast('Não há itens com falta ou sobra para exportar.', true); return; }
+      if (copiar) { await navigator.clipboard.writeText(r.csv.replace('\ufeff', '')); toast('CSV copiado (' + r.itens + ' itens)'); return; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.csv], { type: 'text/csv;charset=utf-8' })); a.download = r.nome;
+      document.body.appendChild(a); a.click(); a.remove(); toast('CSV gerado (' + r.itens + ' itens). Se o download não iniciar, use "Copiar CSV".');
+    } catch (e) { toast(msgErro(e), true); }
+  }
+  $('btnCsv').addEventListener('click', () => baixaCsv(false));
+  $('btnCopiaCsv').addEventListener('click', () => baixaCsv(true));
+
+  function imprimir() {
+    if (!S.rel) { toast('Abra o relatório primeiro.', true); return; }
+    const R = S.rel, k = R.kpis;
+    const dv = R.linhas.filter(x => ['Falta', 'Sobra', 'Recontar'].includes(x.status)).sort((a, b) => Math.abs(b.impacto || 0) - Math.abs(a.impacto || 0));
+    $('printArea').innerHTML = `<h1>Relatório Executivo de Inventário</h1>
+      <p>Base de comparação: <b>${esc(R.empresaBase)}</b> · Data/hora de corte: <b>${esc(R.geradoEm)}</b>${S.ultimoSync ? ' · Estoque Tiny sincronizado em ' + esc(S.ultimoSync.quando) : ''}</p>
+      <table style="margin:8px 0"><tr><th>SKUs na base</th><th>Progresso auditado</th><th>Itens divergentes</th><th>Acuracidade</th><th>Impacto líquido</th></tr>
+      <tr><td>${k.totalSkus}</td><td>${k.progresso}%</td><td>${k.divergentes}</td><td>${k.acuracidade}%</td><td>${BRL(k.impactoLiquido)}</td></tr></table>
+      <h3>Divergências (${dv.length})</h3>
+      <table><tr><th>SKU</th><th>Descrição</th><th class="n">Estoque</th><th class="n">Contado</th><th class="n">Diverg.</th><th class="n">Impacto R$</th><th>Status</th></tr>
+      ${dv.map(l => `<tr><td>${esc(l.sku)}</td><td>${esc(l.desc)}</td><td class="n">${NUM(l.estoque)}</td><td class="n">${NUM(l.contado)}</td><td class="n">${l.diverg === null ? '-' : NUM(l.diverg)}</td><td class="n">${l.impacto === null ? '-' : BRL(l.impacto)}</td><td>${l.status}</td></tr>`).join('')}</table>
+      ${R.naoCatalogados.length ? `<h3 style="margin-top:10px">Itens não catalogados (${R.naoCatalogados.length})</h3><table><tr><th>Descrição</th><th class="n">Qtd</th><th>Lote</th><th>Operador</th></tr>${R.naoCatalogados.map(x => `<tr><td>${esc(x.desc)}</td><td class="n">${x.qtd}</td><td>${esc(x.lote)}</td><td>${esc(x.operador)}</td></tr>`).join('')}</table>` : ''}
+      <div class="assin"><div>Conferente</div><div>Gestor</div></div>`;
+    window.print();
+  }
+  $('btnPrint').addEventListener('click', imprimir);
+
+  $('btnGravaRel').addEventListener('click', async () => {
+    try { const r = await adm('gravarRelatorioGeral', $('empBase').value); toast(r.msg); } catch (e) { toast(msgErro(e), true); }
+  });
+  $('btnArquivar').addEventListener('click', async () => {
+    if (!confirm('Encerrar e arquivar o inventário?\n\nSerá criada uma aba histórica e a aba Contagem será ZERADA para o próximo ciclo.')) return;
+    if (!confirm('Tem certeza? Gere o PDF e o CSV antes, se ainda precisar deles.')) return;
+    $('btnArquivar').disabled = true;
+    try { const r = await adm('encerrarEArquivar'); toast('Arquivado na aba ' + r.aba + ' (' + r.itens + ' lançamentos).'); S.rel = null; await carregarRelatorio(); carregarRec(); }
+    catch (e) { toast(msgErro(e), true); }
+    finally { $('btnArquivar').disabled = false; }
+  });
+
+  // ============================ CONFIGURAÇÕES ============================
+  async function carregarConfig() {
+    try { S.cfg = await adm('obterConfig'); renderConfig(); }
+    catch (e) { toast(msgErro(e), true); if (/PIN/.test(msgErro(e))) irPara('bipar'); }
+  }
+  function linhaEmp(e, i) {
+    return `<div class="empresa-lin" data-i="${i}" data-id="${esc(e.id || '')}">
+      <div class="campo"><label>Nome da empresa</label><input class="e-nome" value="${esc(e.nome || '')}" placeholder="Ex: eRACKS"></div>
+      <div class="campo"><label>Token API v2 ${e.temToken ? '(salvo: ' + esc(e.tokenFim) + ')' : ''}</label><input class="e-token" type="password" autocomplete="off" placeholder="${e.temToken ? 'deixe vazio para manter' : 'cole o token'}"></div>
+      <div class="campo"><label>Depósito (opcional)</label><input class="e-dep" value="${esc(e.deposito || '')}" placeholder="Todos"></div>
+      <label class="sw"><input type="checkbox" class="e-ativa" ${e.ativa !== false ? 'checked' : ''}> Ativa</label>
+      <div style="display:flex;gap:6px"><button class="btn mini" data-acao="testar">Testar Conexão</button><button class="btn perigo mini" data-acao="remover">Remover</button></div></div>`;
+  }
+  function renderConfig() {
+    const c = S.cfg;
+    $('empresasCfg').innerHTML = c.empresas.length ? c.empresas.map(linhaEmp).join('') : '<div class="vazio">Nenhuma empresa cadastrada.</div>';
+    $('reqMin').value = c.reqPorMin; $('refEst').value = c.refEstoque || 'DISPONIVEL';
+    $('pinInfo').textContent = c.temPin ? 'PIN ativo: Relatório e Configurações estão protegidos.' : 'Sem PIN: qualquer pessoa com o link acessa Relatório e Configurações. Defina um PIN abaixo.';
+    $('logSync').textContent = c.job ? `Há uma sincronização interrompida (${c.job.etapa === 'mapa' ? 'etapa 1/2 catálogo' : c.job.idx + '/' + c.job.total}). Clique em sincronizar para retomar.`
+      : c.ultimoSync ? `Última sincronização: ${c.ultimoSync.quando} · ${c.ultimoSync.skus} SKUs · ${c.ultimoSync.empresas.join(', ')} · ${c.ultimoSync.erros} aviso(s).${(c.ultimoSync.lista || []).length ? '\n' + c.ultimoSync.lista.join('\n') : ''}` : 'Nenhuma sincronização feita ainda.';
+  }
+  function lerEmpresasTela() {
+    return [...document.querySelectorAll('#empresasCfg .empresa-lin')].map(r => ({
+      id: r.dataset.id, nome: r.querySelector('.e-nome').value, token: r.querySelector('.e-token').value, deposito: r.querySelector('.e-dep').value, ativa: r.querySelector('.e-ativa').checked }));
+  }
+  $('btnAddEmp').addEventListener('click', () => { if (!S.cfg) return; S.cfg.empresas = lerEmpresasTela().map(e => ({ id: e.id, nome: e.nome, deposito: e.deposito, ativa: e.ativa, temToken: !!e.id, tokenFim: '' })); S.cfg.empresas.push({ ativa: true }); renderConfig(); });
+  $('empresasCfg').addEventListener('click', async e => {
+    const b = e.target.closest('[data-acao]'); if (!b) return;
+    const lin = b.closest('.empresa-lin');
+    if (b.dataset.acao === 'remover') { lin.remove(); return; }
+    b.disabled = true;
+    try { const r = await adm('testarConexao', lin.dataset.id, lin.querySelector('.e-token').value); toast(r.msg, !r.sucesso); }
+    catch (er) { toast(msgErro(er), true); }
+    b.disabled = false;
+  });
+  $('btnSalvaCfg').addEventListener('click', async () => {
+    $('btnSalvaCfg').disabled = true;
+    try { await adm('salvarConfig', { empresas: lerEmpresasTela(), reqPorMin: $('reqMin').value, refEstoque: $('refEst').value }); toast('Configurações salvas'); await iniciar(true); await carregarConfig(); }
+    catch (e) { toast(msgErro(e), true); }
+    $('btnSalvaCfg').disabled = false;
+  });
+  $('btnCat').addEventListener('click', async () => {
+    $('btnCat').disabled = true;
+    try { const r = await adm('recarregarCatalogo'); toast('Catálogo recarregado: ' + r.total + ' produtos'); S.catalogo = await srv('obterCatalogo'); indexaCatalogo(); S.catPronto = true; }
+    catch (e) { toast(msgErro(e), true); }
+    $('btnCat').disabled = false;
+  });
+  $('btnPin').addEventListener('click', async () => {
+    try {
+      const r = await srv('definirPin', $('pinAtual').value, $('pinNovo').value);
+      S.temPin = r.temPin; S.pin = $('pinNovo').value; $('pinAtual').value = ''; $('pinNovo').value = ''; toast(r.temPin ? 'PIN salvo' : 'PIN removido'); carregarConfig();
+    } catch (e) { toast(msgErro(e), true); }
+  });
+
+  $('btnCancSync').addEventListener('click', () => { S.cancelaSync = true; });
+  $('btnSync').addEventListener('click', async () => {
+    const btn = $('btnSync'), log = $('logSync'), barra = $('progSync');
+    const naoSalvo = [...document.querySelectorAll('#empresasCfg .empresa-lin')].some(r => !r.dataset.id || r.querySelector('.e-token').value);
+    if (naoSalvo || !document.querySelector('#empresasCfg .empresa-lin')) {
+      log.textContent = 'Clique em "Salvar configurações" antes de sincronizar.';
+      toast('Salve as configurações primeiro.', true); return;
+    }
+    btn.disabled = true; $('btnCancSync').hidden = false; S.cancelaSync = false;
+    try {
+      const st = await adm('statusSync');
+      const retomar = !!st.job && confirm(`Há uma sincronização interrompida (${st.job.etapa === 'mapa' ? 'catálogo' : st.job.idx + '/' + st.job.total}).\n\nOK = retomar de onde parou\nCancelar = recomeçar do zero`);
+      await adm('iniciarSync', { custos: $('syncCustos').checked, retomar });
+      log.textContent = 'Importando produtos ativos do Tiny...';
+      for (;;) {
+        if (S.cancelaSync) { log.textContent += '\nParado. Você pode retomar depois.'; return; }
+        const r = await adm('processarBlocoSync');
+        if (r.limitado) {
+          for (let s = r.espera; s > 0; s--) { if (S.cancelaSync) break; log.textContent = `O Tiny pediu para aguardar (limite de requisições). Retomando em ${s}s...`; await dorme(1000); }
+          continue;
+        }
+        barra.style.width = r.pct + '%';
+        if (r.mapa && r.etapa === 'mapa') { log.textContent = `Importando produtos ativos do Tiny (página ${r.paginas}/${r.totalPaginas || '?'}) · ${r.erros} aviso(s)`; continue; }
+        if (r.mapa) break;
+        if (r.idx >= r.total) break;
+      }
+      const f = await adm('finalizarSync');
+      barra.style.width = '100%'; S.ultimoSync = f; pintaSync();
+      S.catalogo = await srv('obterCatalogo'); indexaCatalogo(); S.catPronto = true;
+      log.textContent = `Concluído em ${f.quando}. ${f.skus} produtos ativos · ${f.erros} aviso(s). Agora envie as planilhas de estoque de cada empresa.${f.lista.length ? '\n' + f.lista.join('\n') : ''}`;
+      toast('Produtos importados!');
+    } catch (e) { log.textContent = 'Erro: ' + msgErro(e); toast(msgErro(e), true); }
+    finally { btn.disabled = false; $('btnCancSync').hidden = true; }
+  });
+
+  // ============================ INICIALIZAÇÃO ============================
+  function pintaSync() { $('pillSync').textContent = S.ultimoSync ? 'Estoque Tiny sincronizado em ' + S.ultimoSync.quando : 'Estoque Tiny: sem sincronização'; }
+  function preencheEmpresas() {
+    const op = '<option value="CONSOLIDADO">Consolidado</option>' + S.empresas.map(e => `<option value="${esc(e.id)}">${esc(e.nome)}</option>`).join('');
+    const atual = $('empresa').value, atualB = $('empBase').value;
+    $('empresa').innerHTML = op; $('empBase').innerHTML = op;
+    if ([...$('empresa').options].some(o => o.value === atual)) $('empresa').value = atual;
+    if ([...$('empBase').options].some(o => o.value === atualB)) $('empBase').value = atualB;
+  }
+  // ---- Estoque por empresa: lê a planilha "Saldos em Estoque" do Tiny no navegador ----
+  function renderEstoqueEmp() {
+    const box = $('estoqueEmp'); if (!box) return;
+    const info = S.estoqueInfo || {};
+    box.innerHTML = S.empresas.length ? S.empresas.map(e => `<div class="est-box"><b>${esc(e.nome)}</b>
+      <button class="btn suave grande" type="button" data-est="${esc(e.id)}">📥 Enviar planilha ${esc(e.nome)}</button>
+      <div class="meta">${info[e.id] ? 'Última: ' + esc(info[e.id].quando) + ' · ' + info[e.id].itens + ' itens com saldo' : 'Nenhuma planilha enviada'}</div></div>`).join('')
+      : '<div class="vazio">Cadastre e salve as empresas acima.</div>';
+  }
+  const numBR = v => { if (typeof v === 'number') return v; const s = String(v == null ? '' : v).trim(); if (!s) return 0; const n = parseFloat(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s); return isNaN(n) ? 0 : n; };
+  let estEmpId = null;
+  $('estoqueEmp').addEventListener('click', e => { const b = e.target.closest('[data-est]'); if (!b) return; estEmpId = b.dataset.est; $('fileEst').value = ''; $('fileEst').click(); });
+  $('fileEst').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f || !estEmpId) return;
+    const nome = (S.empresas.find(x => x.id === estEmpId) || {}).nome || '', log = $('logEst');
+    if (typeof XLSX === 'undefined') { toast('Leitor de planilha indisponível (sem internet?).', true); return; }
+    try {
+      log.textContent = 'Lendo ' + f.name + '...';
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+      let h = -1, iS = -1, iF = -1, iR = -1;
+      for (let i = 0; i < Math.min(rows.length, 15) && h < 0; i++) {
+        const c = rows[i].map(x => norm(x).trim());
+        const s = c.findIndex(x => x.startsWith('codigo')), fi = c.findIndex(x => x.includes('estoque fisico') || x === 'estoque');
+        if (s >= 0 && fi >= 0) { h = i; iS = s; iF = fi; iR = c.findIndex(x => x.includes('reservado')); }
+      }
+      if (h < 0) throw new Error('Não achei as colunas "Código (SKU)" e "Estoque físico". Use o relatório Saldos em Estoque do Tiny.');
+      const linhas = rows.slice(h + 1).filter(r => String(r[iS]).trim()).map(r => [String(r[iS]).trim(), numBR(r[iF]), iR >= 0 ? numBR(r[iR]) : 0]);
+      if (!linhas.length) throw new Error('A planilha não tem linhas de produtos.');
+      if (!confirm(`Importar ${linhas.length} linhas para a empresa "${nome}"?\nO estoque anterior dessa empresa será substituído.`)) { log.textContent = 'Cancelado.'; return; }
+      log.textContent = 'Enviando ' + linhas.length + ' linhas para ' + nome + '...';
+      const r = await adm('importarEstoqueEmpresa', estEmpId, linhas);
+      S.estoqueInfo = r.info; renderEstoqueEmp();
+      log.textContent = `${nome}: ${r.casados} produtos com saldo gravados (${r.naPlanilha} na planilha).` + (r.foraDoCatalogo ? `\n${r.foraDoCatalogo} SKUs da planilha não estão no catálogo ativo (ex.: ${r.exemplos.join(', ')}).` : '');
+      toast('Estoque de ' + nome + ' importado');
+    } catch (er) { log.textContent = 'Erro: ' + msgErro(er); toast(msgErro(er), true); }
+  });
+
+  async function iniciar(soStatus) {
+    try {
+      const s = await srv('statusInicial');
+      S.temPin = s.temPin; S.empresas = s.empresas; S.ultimoSync = s.ultimoSync; S.estoqueInfo = s.estoqueInfo || {}; preencheEmpresas(); renderEstoqueEmp(); pintaSync();
+      if (soStatus) return;
+      S.catalogo = await srv('obterCatalogo'); indexaCatalogo(); S.catPronto = true;
+      carregarRec();
+    } catch (e) { toast('Não foi possível carregar: ' + msgErro(e), true); }
+  }
+
+  $('operador').value = ls.get('inv_operador') || ''; $('lote').value = ls.get('inv_lote') || '';
+  $('leitor').checked = ls.get('inv_leitor') === '1'; aplicaLeitor();
+  $('cega').checked = ls.get('inv_cega') === '1';
+  setModo(ls.get('inv_modo') === 'manual' ? 'manual' : 'auto');
+
+  $('mAuto').onclick = () => setModo('auto'); $('mManual').onclick = () => setModo('manual');
+  $('cega').onchange = () => ls.set('inv_cega', $('cega').checked ? '1' : '0');
+  $('leitor').onchange = () => { aplicaLeitor(); refoco(); };
+  $('codigo').addEventListener('input', sugerir);
+  $('codigo').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); processarEntrada($('codigo').value); } });
+  $('ultimo').addEventListener('click', consultaVivo); $('manualInfo').addEventListener('click', consultaVivo);
+  $('sugestoes').addEventListener('click', e => { const b = e.target.closest('[data-sku]'); if (b) processarEntrada(b.dataset.sku); });
+  $('btnCam').onclick = abrirCamera; $('btnFechaCam').onclick = fecharCamera; $('btnTorch').onclick = alternaLanterna; $('btnTroca').onclick = trocaCamera;
+  $('btnFoto').onclick = () => $('foto').click(); $('foto').onchange = e => lerFoto(e.target.files[0]);
+  $('btnNC').onclick = abrirNC; $('btnDesfazer').onclick = desfazer;
+  $('btnConfManual').onclick = confirmaManual; $('btnCancManual').onclick = fechaManual;
+  $('qtdManual').addEventListener('keydown', e => { if (e.key === 'Enter') confirmaManual(); });
+  $('modal').addEventListener('click', e => { if (e.target.id === 'modal') fechaModal(); });
+  document.addEventListener('click', e => { if (S.tab === 'bipar' && !e.target.closest('input,select,textarea,button,label,#sugestoes')) refoco(); });
+  setInterval(() => { if (!document.hidden && S.tab !== 'recontar') carregarRec(); }, 60000);
+
+  window.addEventListener('beforeunload', e => { if (pendentes().length) { e.preventDefault(); e.returnValue = ''; } });
+  restauraFila();
+  iniciar(false);
+</script>
+</body>
+</html>
